@@ -1,0 +1,50 @@
+name: weekly-retrain
+
+# Retrains the model once a week on the full history (historical + everything
+# collected live), validates it, and commits the new model.joblib so the hourly
+# job starts using it. A bad/corrupt data batch is rejected and the old model kept.
+on:
+  schedule:
+    - cron: "30 18 * * 0"        # Sunday 18:30 UTC = Monday 00:00 IST (weekly)
+  workflow_dispatch: {}           # allows manual retrain from the Actions tab
+
+permissions:
+  contents: write                 # needed to commit the updated model back
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - run: pip install -r requirements.txt
+
+      - name: Retrain (with safety check)
+        id: retrain
+        env:
+          FIREBASE_CREDENTIALS_JSON: ${{ secrets.FIREBASE_CREDENTIALS_JSON }}
+        run: |
+          if python -m src.retrain; then
+            echo "updated=true"  >> "$GITHUB_OUTPUT"
+          else
+            echo "updated=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit updated model
+        if: steps.retrain.outputs.updated == 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add artifacts/model.joblib
+          if git diff --staged --quiet; then
+            echo "No change in model file."
+          else
+            git commit -m "weekly retrain: update model.joblib [skip ci]"
+            git push
+          fi

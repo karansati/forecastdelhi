@@ -1,0 +1,25 @@
+name: seed-history
+
+# One-off: uploads the last 60 hours from artifacts/history_seed.csv to Firestore so
+# the model can forecast immediately. Run manually from the Actions tab, once.
+on:
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: "Hours of history to seed"
+        default: "60"
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - run: pip install -r requirements.txt
+      - name: Seed history
+        env:
+          FIREBASE_CREDENTIALS_JSON: ${{ secrets.FIREBASE_CREDENTIALS_JSON }}
+        run: python -m src.seed_history --csv artifacts/history_seed.csv --hours ${{ github.event.inputs.hours }}
